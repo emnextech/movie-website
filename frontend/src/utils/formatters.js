@@ -1,16 +1,20 @@
 /**
  * Format file size in bytes to human readable format
- * @param {number} bytes - File size in bytes
+ * @param {number|string} bytes - File size in bytes (can be number or string)
  * @returns {string} Formatted size (e.g., "1.5 GB")
  */
 export const formatFileSize = (bytes) => {
   if (!bytes || bytes === 0) return '0 B';
   
+  // Convert string to number if needed
+  const numBytes = typeof bytes === 'string' ? parseInt(bytes, 10) : bytes;
+  if (isNaN(numBytes) || numBytes === 0) return '0 B';
+  
   const k = 1024;
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  const i = Math.floor(Math.log(numBytes) / Math.log(k));
   
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
+  return `${parseFloat((numBytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
 };
 
 /**

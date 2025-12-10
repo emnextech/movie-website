@@ -26,8 +26,13 @@ router.get('/:detailPath', async (req, res, next) => {
       ? `/movies/${detailPath}?id=${id}`
       : `/movies/${detailPath}`;
 
+    // Construct referer URL
+    const refererUrl = id 
+      ? `${BASE_URL}/movies/${detailPath}?id=${id}`
+      : `${BASE_URL}/movies/${detailPath}`;
+
     // Fetch HTML content
-    const html = await getHTML(url);
+    const html = await getHTML(url, refererUrl);
 
     // Parse JSON data from HTML
     const movieData = parseMovieDetailHTML(html);

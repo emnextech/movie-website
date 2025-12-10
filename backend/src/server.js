@@ -38,6 +38,7 @@ app.use('/api/rankings', trendingRoutes);
 app.use('/api/movies', detailsRoutes);
 app.use('/api/download', downloadRoutes);
 app.use('/api/stream', downloadRoutes);
+app.use('/api/movie', downloadRoutes); // Movie download endpoints
 app.use('/api/recommendations', recommendationsRoutes);
 
 // Popular searches route

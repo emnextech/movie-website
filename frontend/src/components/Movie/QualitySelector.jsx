@@ -6,21 +6,33 @@ const QualitySelector = ({ qualities, selectedQuality, onSelect }) => {
   // Sort qualities by resolution (highest first)
   const sortedQualities = [...qualities].sort((a, b) => {
     const getResolution = (q) => {
-      const match = q.resolution?.match(/(\d+)P/i) || q.quality?.match(/(\d+)P/i);
+      // Handle numeric resolution (e.g., 360, 480, 1080)
+      if (typeof q.resolution === 'number') {
+        return q.resolution;
+      }
+      // Handle string resolution (e.g., "360P", "1080P")
+      const match = q.resolution?.toString().match(/(\d+)/) || q.quality?.toString().match(/(\d+)/);
       return match ? parseInt(match[1]) : 0;
     };
     return getResolution(b) - getResolution(a);
   });
 
+  const formatResolution = (resolution) => {
+    if (typeof resolution === 'number') {
+      return `${resolution}P`;
+    }
+    return resolution || 'Unknown';
+  };
+
   return (
     <div className="flex flex-wrap gap-2">
       {sortedQualities.map((quality, index) => {
-        const resolution = quality.resolution || quality.quality || 'Unknown';
-        const isSelected = selectedQuality?.url === quality.url;
+        const resolution = formatResolution(quality.resolution || quality.quality);
+        const isSelected = selectedQuality?.id === quality.id || selectedQuality?.url === quality.url;
         
         return (
           <button
-            key={index}
+            key={quality.id || index}
             onClick={() => onSelect(quality)}
             className={`px-4 py-2 rounded-lg font-medium transition-colors ${
               isSelected

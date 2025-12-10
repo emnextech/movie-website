@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -59,8 +59,8 @@ export const getMovieDetails = (detailPath, id = null) => {
 };
 
 // Download
-export const getDownloadMetadata = (subjectId, se = 0, ep = 0) =>
-  api.get('/download/metadata', { params: { subjectId, se, ep } });
+export const getDownloadMetadata = (subjectId, se = 0, ep = 0, detailPath = null) =>
+  api.get('/download/metadata', { params: { subjectId, se, ep, ...(detailPath && { detailPath }) } });
 
 export const getStreamMetadata = (subjectId, se = 0, ep = 0) =>
   api.get('/stream', { params: { subjectId, se, ep } });
@@ -76,6 +76,72 @@ export const downloadFile = (url, onProgress) => {
       }
     },
   });
+};
+
+// Movie download endpoints
+export const getMovieDownloads = async (subjectId, detailPath = null) => {
+  try {
+    const params = { subjectId, se: 0, ep: 0 };
+    if (detailPath) {
+      params.detailPath = detailPath;
+    }
+    const response = await api.get('/movie/download', { params });
+    
+    if (response.success) {
+      return {
+        videos: response.downloads || [],
+        subtitles: response.captions || [],
+        metadata: response.metadata || {},
+      };
+    } else {
+      throw new Error(response.error?.message || 'Unknown error');
+    }
+  } catch (error) {
+    console.error('Error fetching downloads:', error);
+    throw error;
+  }
+};
+
+// Get best quality video
+export const getBestQualityVideo = async (subjectId, detailPath = null) => {
+  try {
+    const params = { subjectId, se: 0, ep: 0 };
+    if (detailPath) params.detailPath = detailPath;
+    const response = await api.get('/movie/download/best', { params });
+    
+    return response.success ? response.video : null;
+  } catch (error) {
+    console.error('Error fetching best quality:', error);
+    return null;
+  }
+};
+
+// Get specific quality video
+export const getVideoByQuality = async (subjectId, quality, detailPath = null) => {
+  try {
+    const params = { subjectId, se: 0, ep: 0 };
+    if (detailPath) params.detailPath = detailPath;
+    const response = await api.get(`/movie/download/quality/${quality}`, { params });
+    
+    return response.success ? response.video : null;
+  } catch (error) {
+    console.error('Error fetching video:', error);
+    return null;
+  }
+};
+
+// Get subtitle by language
+export const getSubtitle = async (subjectId, lang = 'en', detailPath = null) => {
+  try {
+    const params = { subjectId, se: 0, ep: 0, lang };
+    if (detailPath) params.detailPath = detailPath;
+    const response = await api.get('/movie/subtitle', { params });
+    
+    return response.success ? response.subtitle : null;
+  } catch (error) {
+    console.error('Error fetching subtitle:', error);
+    return null;
+  }
 };
 
 // Recommendations

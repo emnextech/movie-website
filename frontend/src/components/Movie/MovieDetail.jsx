@@ -5,7 +5,7 @@ import QualitySelector from './QualitySelector';
 import DownloadButton from '../Download/DownloadButton';
 import MovieGrid from './MovieGrid';
 import OptimizedImage from '../Common/OptimizedImage';
-import { formatDate, formatDuration } from '../../utils/formatters';
+import { formatDate, formatDuration, formatFileSize } from '../../utils/formatters';
 import { Star, Clock, Globe, Film } from 'lucide-react';
 
 const MovieDetail = () => {
@@ -28,20 +28,32 @@ const MovieDetail = () => {
 
         // Fetch movie details
         const movieResponse = await getMovieDetails(detailPath, subjectId);
-        setMovie(movieResponse.data);
+        const movieData = movieResponse.data;
+        console.log('Movie data received:', movieData); // Debug log
+        console.log('Full response:', movieResponse); // Debug log
+        setMovie(movieData);
 
         // Fetch download metadata if subjectId is available
         if (subjectId) {
           try {
-            const downloadResponse = await getDownloadMetadata(subjectId, 0, 0);
-            const downloadInfo = downloadResponse.data;
+            const downloadResponse = await getDownloadMetadata(subjectId, 0, 0, detailPath);
             
-            if (downloadInfo?.mediaFiles && downloadInfo.mediaFiles.length > 0) {
+            // Handle new response structure: { success, downloads, captions, metadata }
+            // Also handle old structure for compatibility: { data: { downloads, mediaFiles, captions, captionFiles } }
+            const downloadInfo = downloadResponse.downloads 
+              ? downloadResponse 
+              : downloadResponse.data || downloadResponse;
+            
+            // Handle both 'downloads' and 'mediaFiles' structures for compatibility
+            const downloads = downloadInfo?.downloads || downloadInfo?.mediaFiles || [];
+            
+            if (downloads.length > 0) {
               setDownloadData(downloadInfo);
               // Select highest quality by default
-              const sorted = [...downloadInfo.mediaFiles].sort((a, b) => {
-                const getRes = (q) => parseInt(q.resolution?.match(/(\d+)/)?.[1] || 0);
-                return getRes(b) - getRes(a);
+              const sorted = [...downloads].sort((a, b) => {
+                const resA = a.resolution || parseInt(a.resolution?.toString().match(/(\d+)/)?.[1] || 0);
+                const resB = b.resolution || parseInt(b.resolution?.toString().match(/(\d+)/)?.[1] || 0);
+                return resB - resA;
               });
               setSelectedQuality(sorted[0]);
             }
@@ -102,21 +114,40 @@ const MovieDetail = () => {
   }
 
   // Extract movie data - handle both direct and nested structures
-  const subject = movie.subject || movie;
-  const cover = subject.cover || movie.cover || {};
-  const posterUrl = cover.url || subject.image?.url || movie.image || subject.poster || movie.poster || '';
-  const blurHash = cover.blurHash || subject.cover?.blurHash || movie.cover?.blurHash;
-  const thumbnail = cover.thumbnail || subject.cover?.thumbnail || movie.cover?.thumbnail;
-  const title = subject.title || movie.title || subject.name || movie.name || 'Unknown Title';
-  const description = subject.description || movie.description || subject.overview || movie.overview || '';
-  const genre = subject.genre || movie.genre || '';
-  const duration = subject.duration || movie.duration || 0;
-  const countryName = subject.countryName || movie.countryName || '';
-  const imdbRating = subject.imdbRatingValue || movie.imdbRatingValue || '';
-  const imdbRatingCount = subject.imdbRatingCount || movie.imdbRatingCount || 0;
-  const subtitles = subject.subtitles || movie.subtitles || '';
-  const subjectType = subject.subjectType || movie.subjectType || 1; // 1 = Movie, 2 = TV Series
-  const releaseDate = subject.releaseDate || movie.releaseDate || '';
+  // Try multiple paths to find the subject data
+  const subject = movie?.subject || movie?.data?.subject || movie?.data || movie || {};
+  const cover = subject?.cover || movie?.cover || {};
+  
+  // Handle cover as both object and direct URL
+  const posterUrl = typeof cover === 'string' 
+    ? cover 
+    : cover?.url || subject?.image?.url || movie?.image || subject?.poster || movie?.poster || subject?.cover || movie?.cover || '';
+  
+  const blurHash = cover?.blurHash || subject?.cover?.blurHash || movie?.cover?.blurHash;
+  const thumbnail = cover?.thumbnail || subject?.cover?.thumbnail || movie?.cover?.thumbnail;
+  const title = subject?.title || movie?.title || subject?.name || movie?.name || 'Unknown Title';
+  const description = subject?.description || movie?.description || subject?.overview || movie?.overview || '';
+  const genre = subject?.genre || movie?.genre || subject?.genres?.join(',') || '';
+  const duration = subject?.duration || movie?.duration || subject?.runtime || movie?.runtime || 0;
+  const countryName = subject?.countryName || movie?.countryName || subject?.country || movie?.country || '';
+  const imdbRating = subject?.imdbRatingValue || movie?.imdbRatingValue || subject?.imdbRating || movie?.imdbRating || '';
+  const imdbRatingCount = subject?.imdbRatingCount || movie?.imdbRatingCount || subject?.imdbRatingCount || movie?.imdbRatingCount || 0;
+  const subtitles = subject?.subtitles || movie?.subtitles || '';
+  const subjectType = subject?.subjectType || movie?.subjectType || 1; // 1 = Movie, 2 = TV Series
+  const releaseDate = subject?.releaseDate || movie?.releaseDate || subject?.year || movie?.year || '';
+  
+  // Debug: Log extracted data
+  console.log('Extracted movie data:', {
+    title,
+    description: description?.substring(0, 50) + '...',
+    genre,
+    duration,
+    countryName,
+    imdbRating,
+    releaseDate,
+    subjectId,
+    hasDownloadData: !!downloadData,
+  });
 
   // Format genres as array
   const genres = genre ? genre.split(',').map(g => g.trim()) : [];
@@ -168,33 +199,35 @@ const MovieDetail = () => {
           </div>
 
           {/* Rating and Meta Info */}
-          <div className="flex flex-wrap items-center gap-6 mb-6">
-            {imdbRating && (
-              <div className="flex items-center gap-2">
-                <Star className="w-5 h-5 text-yellow-400 fill-yellow-400" />
-                <div>
-                  <span className="text-white font-semibold">{imdbRating}</span>
-                  {imdbRatingCount > 0 && (
-                    <span className="text-gray-400 text-sm ml-2">
-                      ({imdbRatingCount.toLocaleString()} ratings)
-                    </span>
-                  )}
+          {(imdbRating || duration > 0 || countryName) && (
+            <div className="flex flex-wrap items-center gap-6 mb-6">
+              {imdbRating && (
+                <div className="flex items-center gap-2">
+                  <Star className="w-5 h-5 text-yellow-400 fill-yellow-400" />
+                  <div>
+                    <span className="text-white font-semibold">{imdbRating}</span>
+                    {imdbRatingCount > 0 && (
+                      <span className="text-gray-400 text-sm ml-2">
+                        ({imdbRatingCount.toLocaleString()} ratings)
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
-            {duration > 0 && (
-              <div className="flex items-center gap-2 text-gray-300">
-                <Clock className="w-5 h-5" />
-                <span>{formatDuration(duration)}</span>
-              </div>
-            )}
-            {countryName && (
-              <div className="flex items-center gap-2 text-gray-300">
-                <Globe className="w-5 h-5" />
-                <span>{countryName}</span>
-              </div>
-            )}
-          </div>
+              )}
+              {duration > 0 && (
+                <div className="flex items-center gap-2 text-gray-300">
+                  <Clock className="w-5 h-5" />
+                  <span>{formatDuration(duration)}</span>
+                </div>
+              )}
+              {countryName && (
+                <div className="flex items-center gap-2 text-gray-300">
+                  <Globe className="w-5 h-5" />
+                  <span>{countryName}</span>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Genres */}
           {genres.length > 0 && (
@@ -246,23 +279,72 @@ const MovieDetail = () => {
           )}
 
           {/* Download Section */}
-          {downloadData && (
-            <div className="space-y-4">
-              <div>
-                <h3 className="text-white font-semibold mb-3">Select Quality</h3>
-                <QualitySelector
-                  qualities={downloadData.mediaFiles || []}
-                  selectedQuality={selectedQuality}
-                  onSelect={setSelectedQuality}
-                />
-              </div>
+          {subjectId && (
+            <div className="space-y-6 mt-6">
+              {downloadData ? (() => {
+                // Handle both 'downloads' and 'mediaFiles' structures
+                const downloads = downloadData.downloads || downloadData.mediaFiles || [];
+                const captions = downloadData.captions || downloadData.captionFiles || [];
+                
+                if (downloads.length > 0) {
+                  return (
+                    <>
+                      <div>
+                        <h3 className="text-white font-semibold mb-3">Select Quality</h3>
+                        <QualitySelector
+                          qualities={downloads}
+                          selectedQuality={selectedQuality}
+                          onSelect={setSelectedQuality}
+                        />
+                      </div>
 
-              {selectedQuality && (
-                <DownloadButton
-                  url={selectedQuality.url}
-                  filename={`${title}.mp4`}
-                  fileSize={selectedQuality.size}
-                />
+                      {selectedQuality && (
+                        <DownloadButton
+                          url={selectedQuality.url}
+                          filename={`${title}.mp4`}
+                          fileSize={typeof selectedQuality.size === 'string' 
+                            ? parseInt(selectedQuality.size) 
+                            : selectedQuality.size}
+                          detailPath={detailPath}
+                          subjectId={subjectId}
+                        />
+                      )}
+
+                      {/* Captions/Subtitles Section */}
+                      {captions.length > 0 && (
+                        <div>
+                          <h3 className="text-white font-semibold mb-3 flex items-center gap-2">
+                            <Film className="w-4 h-4" />
+                            Download Subtitles
+                          </h3>
+                          <div className="flex flex-wrap gap-2">
+                            {captions.map((caption) => (
+                              <a
+                                key={caption.id || caption.lan}
+                                href={caption.url}
+                                download
+                                className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-gray-200 rounded text-sm transition-colors"
+                                title={`${caption.lanName || caption.lan} (${caption.size ? formatFileSize(parseInt(caption.size)) : ''})`}
+                              >
+                                {caption.lanName || caption.lan}
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  );
+                } else {
+                  return (
+                    <div className="text-gray-400 text-sm">
+                      No download options available at this time.
+                    </div>
+                  );
+                }
+              })() : (
+                <div className="text-gray-400 text-sm">
+                  Loading download options...
+                </div>
               )}
             </div>
           )}

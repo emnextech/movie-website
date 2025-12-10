@@ -13,6 +13,7 @@ export const parseMovieDetailHTML = (html) => {
     // Find script tags that contain JSON data
     // Moviebox typically embeds data in a script tag with id="__NEXT_DATA__" or similar
     let movieData = null;
+    let rawJsonData = null;
     
     // Try to find JSON in script tags
     $('script').each((i, elem) => {
@@ -23,7 +24,7 @@ export const parseMovieDetailHTML = (html) => {
           // Try to find window.__INITIAL_STATE__ or similar patterns
           const stateMatch = scriptContent.match(/window\.__INITIAL_STATE__\s*=\s*({.+?});/s);
           if (stateMatch) {
-            movieData = JSON.parse(stateMatch[1]);
+            rawJsonData = JSON.parse(stateMatch[1]);
             return false; // Break the loop
           }
           
@@ -32,18 +33,40 @@ export const parseMovieDetailHTML = (html) => {
           if (parseMatch) {
             try {
               const decoded = parseMatch[1].replace(/\\"/g, '"').replace(/\\n/g, '\n');
-              movieData = JSON.parse(decoded);
+              rawJsonData = JSON.parse(decoded);
               return false;
             } catch (e) {
               // Continue searching
             }
           }
           
-          // Try direct JSON in script tag
+          // Try to find __NEXT_DATA__ pattern (Next.js)
+          const nextDataMatch = scriptContent.match(/<script[^>]*id="__NEXT_DATA__"[^>]*>(.+?)<\/script>/s);
+          if (nextDataMatch) {
+            try {
+              rawJsonData = JSON.parse(nextDataMatch[1]);
+              return false;
+            } catch (e) {
+              // Continue searching
+            }
+          }
+          
+          // Try direct JSON in script tag with subjectId
           const jsonMatch = scriptContent.match(/\{[\s\S]*"subjectId"[\s\S]*\}/);
           if (jsonMatch) {
             try {
-              movieData = JSON.parse(jsonMatch[0]);
+              rawJsonData = JSON.parse(jsonMatch[0]);
+              return false;
+            } catch (e) {
+              // Continue searching
+            }
+          }
+          
+          // Try to find any large JSON object that might contain subject data
+          const largeJsonMatch = scriptContent.match(/\{[\s\S]{100,}[\s\S]*"subject"[\s\S]*\}/);
+          if (largeJsonMatch) {
+            try {
+              rawJsonData = JSON.parse(largeJsonMatch[0]);
               return false;
             } catch (e) {
               // Continue searching
@@ -55,6 +78,33 @@ export const parseMovieDetailHTML = (html) => {
       }
     });
     
+    // Extract subject data from parsed JSON
+    if (rawJsonData) {
+      // Try various paths to find the subject data
+      const possiblePaths = [
+        rawJsonData.subject,
+        rawJsonData.data?.subject,
+        rawJsonData.props?.pageProps?.subject,
+        rawJsonData.pageProps?.subject,
+        rawJsonData.initialState?.subject,
+        rawJsonData.state?.subject,
+        rawJsonData.movie,
+        rawJsonData.data?.movie,
+      ];
+      
+      for (const path of possiblePaths) {
+        if (path && typeof path === 'object') {
+          movieData = path;
+          break;
+        }
+      }
+      
+      // If no subject found but we have the raw data, use it
+      if (!movieData && rawJsonData) {
+        movieData = rawJsonData;
+      }
+    }
+    
     // If no JSON found in scripts, try to extract from meta tags or other elements
     if (!movieData) {
       // Extract basic info from meta tags
@@ -62,10 +112,29 @@ export const parseMovieDetailHTML = (html) => {
       const description = $('meta[property="og:description"]').attr('content') || '';
       const image = $('meta[property="og:image"]').attr('content') || '';
       
+      // Try to extract more data from the page structure
+      const pageTitle = $('h1').first().text().trim() || title;
+      const pageDescription = $('meta[name="description"]').attr('content') || description;
+      
+      // Try to extract additional info from page elements
+      const genreElements = $('[class*="genre"], [data-genre]').map((i, el) => $(el).text().trim()).get();
+      const genre = genreElements.length > 0 ? genreElements.join(',') : '';
+      
+      // Try to find rating
+      const ratingElement = $('[class*="rating"], [class*="imdb"], [data-rating]').first();
+      const rating = ratingElement.text().trim() || '';
+      
+      // Try to find duration
+      const durationElement = $('[class*="duration"], [class*="runtime"], [data-duration]').first();
+      const durationText = durationElement.text().trim() || '';
+      
       movieData = {
-        title,
-        description,
+        title: pageTitle,
+        description: pageDescription,
         image,
+        genre: genre || undefined,
+        imdbRatingValue: rating || undefined,
+        duration: durationText || undefined,
         // Try to extract subjectId from URL or data attributes
         subjectId: extractSubjectId(html),
       };
